@@ -20,6 +20,7 @@ Requires python3 (numpy, scipy, opencv-python-headless), node 18+, Playwright's 
 | file | what it does |
 |---|---|
 | `calib.json` | perspective calibration in normalized image coords: vanishing point, back-wall rectangle, table edges, the figures' silhouette, and subject positions for the close-ups |
+| `enhance.py` | restoration-style colour pass: softens flaked plaster and pits, light denoise, local contrast, revives faded pigment (vibrance), gentle sharpen. `source/enhance_comparison.jpg` shows before and after |
 | `prep.py` | solves the room box from the vanishing point, cuts out the figures, inpaints the wall behind them and builds the foreground depth map |
 | `music.py` | synthesizes the score (drone, choir, braams, drums, risers, the silence before the second drop) |
 | `scene.js` / `index.html` | Three.js scene, the shot list, post FX and titles |
