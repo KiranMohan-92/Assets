@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; background: #000; overflow: hidden; }
+  #stage { position: relative; width: var(--w); height: var(--h); }
+  #stage canvas { display: block; }
+  .cap { position: absolute; left: 0; right: 0; text-align: center; color: #f3e9d6; opacity: 0;
+         text-shadow: 0 0 calc(var(--h) * 0.02) rgba(0,0,0,.85); white-space: nowrap; }
+  .small { font: 500 calc(var(--h) * 0.022) 'Inter', sans-serif; text-transform: uppercase; bottom: 17%; }
+  .quote { font: italic 400 calc(var(--h) * 0.042) 'Caladea', 'Bitstream Charter', serif; bottom: 16%; letter-spacing: .02em !important; }
+  .name { font: 800 calc(var(--h) * 0.075) 'Inter Display', 'Inter', sans-serif; text-transform: uppercase; text-align: left; left: 7%; bottom: 18%; }
+  .name small { display: block; font: 500 calc(var(--h) * 0.02) 'Inter', sans-serif; letter-spacing: .3em; opacity: .8; }
+  #title { top: 50%; transform: translateY(-50%); }
+  #title .t { font: 400 calc(var(--h) * 0.085) 'Caladea', 'Bitstream Charter', serif; text-transform: uppercase; }
+  #title .s { font: 500 calc(var(--h) * 0.021) 'Inter', sans-serif; text-transform: uppercase; letter-spacing: .45em; margin-top: calc(var(--h) * 0.02); opacity: .85; }
+  #title .rule { width: calc(var(--h) * 0.12); height: 1px; background: #f3e9d6; margin: calc(var(--h) * 0.025) auto 0; opacity: .7; }
+</style>
+<script type="importmap">{ "imports": { "three": "./three.module.js" } }</script>
+</head>
+<body>
+<div id="stage">
+  <div class="cap small" id="c1">Santa Maria delle Grazie &middot; Milan &middot; 1498</div>
+  <div class="cap quote" id="c2">&ldquo;One of you will betray me.&rdquo;</div>
+  <div class="cap small" id="c3">The moment after the words</div>
+  <div class="cap name" id="c4"><small>Clutching the silver</small>Judas</div>
+  <div class="cap small" id="c5">Thirteen figures &middot; one vanishing point</div>
+  <div class="cap" id="title"><div class="t">The Last Supper</div><div class="rule"></div><div class="s">Leonardo da Vinci &middot; 1495&ndash;1498</div></div>
+</div>
+<script type="module">
+  import './scene.js';
+  window.__ready = true;
+</script>
+</body>
+</html>
