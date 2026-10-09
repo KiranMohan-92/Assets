@@ -272,7 +272,11 @@ def work(frame):
     if not os.path.exists(path):
         return frame, False
     bgr = cv2.imread(path, cv2.IMREAD_COLOR)
-    img = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+    if bgr.shape[1] != W or bgr.shape[0] != H:
+        # renders may be smaller (e.g. 720p); upscale first so titles are drawn crisp at full size
+        bgr = cv2.resize(bgr, (W, H), interpolation=cv2.INTER_LANCZOS4)
+        bgr = cv2.addWeighted(bgr, 1.4, cv2.GaussianBlur(bgr, (0, 0), 1.2), -0.4, 0)
+    img =cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
     tl = _ctx["tl"]
     e = tl[frame] if frame < len(tl) else {"t": frame / FPS}
     out = process(img, e, frame)
