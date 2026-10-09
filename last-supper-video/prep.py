@@ -1,6 +1,9 @@
 """Turn the flat painting into a two-layer 3D scene.
 
-usage: python3 prep.py painting.jpg calib.json out_dir
+usage: python3 prep.py painting.jpg calib.json out_dir [disparity.png]
+
+disparity.png (optional) is a monocular depth estimate (brighter = nearer, e.g.
+Depth Anything V2) used to sculpt real relief into the figures.
 
 Writes to out_dir:
   bg.jpg       painting with the figures/table inpainted away (room layer)
@@ -16,6 +19,7 @@ import numpy as np
 from scipy import ndimage
 
 src, calib_path, out = sys.argv[1:4]
+disp_path = sys.argv[4] if len(sys.argv) > 4 else None
 C = json.load(open(calib_path))
 img = cv2.imread(src, cv2.IMREAD_COLOR)
 H0, W0 = img.shape[:2]
@@ -64,12 +68,63 @@ poly = [(u * W, v * H) for u, v in C['figuresTop']]
 poly += [(C['figuresTop'][-1][0] * W, tableBottom * H), (C['figuresTop'][0][0] * W, tableBottom * H)]
 mask = np.zeros((H, W), np.uint8)
 cv2.fillPoly(mask, [np.array(poly, np.int32)], 255)
-# snap mask edges to image content: grow/shrink along strong edges a little
+
+
+def grabcut_mask(mask):
+    """Snap the hand-drawn outline to real edges with GrabCut (half res)."""
+    gs = 2
+    m_s = cv2.resize(mask, (W // gs, H // gs), interpolation=cv2.INTER_NEAREST)
+    band = max(3, W // gs // 150)
+    gc = np.full(m_s.shape, cv2.GC_BGD, np.uint8)
+    gc[cv2.dilate(m_s, np.ones((3, 3), np.uint8), iterations=band) > 0] = cv2.GC_PR_BGD
+    gc[m_s > 0] = cv2.GC_PR_FGD
+    gc[cv2.erode(m_s, np.ones((3, 3), np.uint8), iterations=band) > 0] = cv2.GC_FGD
+    bgm, fgm = np.zeros((1, 65), np.float64), np.zeros((1, 65), np.float64)
+    cv2.grabCut(cv2.resize(img, (W // gs, H // gs), interpolation=cv2.INTER_AREA), gc, None, bgm, fgm, 4, cv2.GC_INIT_WITH_MASK)
+    m_s = np.where((gc == cv2.GC_FGD) | (gc == cv2.GC_PR_FGD), 255, 0).astype(np.uint8)
+    return cv2.resize(m_s, (W, H), interpolation=cv2.INTER_LINEAR)
+
+
+def depth_mask(mask):
+    """Inside the (generously grown) outline, keep pixels clearly nearer than the
+    wall just above the heads in the same column."""
+    dfull = cv2.imread(disp_path, cv2.IMREAD_UNCHANGED).astype(np.float32)
+    dfull = cv2.resize(dfull[..., 0] if dfull.ndim == 3 else dfull, (W, H), interpolation=cv2.INTER_CUBIC) / 65535.0
+    poly_m = cv2.dilate(mask, np.ones((3, 3), np.uint8), iterations=max(2, W // 120)) > 0
+    tops = np.argmax(poly_m, axis=0)
+    ref = np.ones(W, np.float32)
+    off0, off1 = int(0.07 * H), int(0.015 * H)
+    for x in range(W):
+        if poly_m[:, x].any():
+            ref[x] = np.median(dfull[max(0, tops[x] - off0):max(1, tops[x] - off1), x])
+    ref = ndimage.uniform_filter1d(ndimage.maximum_filter1d(ref, W // 60), W // 60)
+    return ((dfull > ref[None, :] + C.get('depthCutMargin', 0.04)) & poly_m).astype(np.uint8) * 255
+
+
+m = grabcut_mask(mask)
+if disp_path:
+    # the depth model separates figures from the back wall superbly, but it reads the
+    # side walls as nearer than the outer apostles, so only trust it in the centre
+    lo, hi = C.get('depthCutSpan', [0.25, 0.75])
+    w = np.clip(np.minimum((np.arange(W) / W - lo), (hi - np.arange(W) / W)) / 0.03, 0, 1)[None, :]
+    m = (depth_mask(mask) * w + m * (1 - w)).astype(np.uint8)
+# the table itself is certain foreground
+t0, t1 = int(tableTop * H), int(tableBottom * H)
+m[t0:t1] = np.maximum(m[t0:t1], mask[t0:t1])
+m = np.where(m > 127, 255, 0).astype(np.uint8)
+m = cv2.morphologyEx(m, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+n, lab, stats, _ = cv2.connectedComponentsWithStats(m)
+if n > 1:
+    m = np.where(lab == 1 + np.argmax(stats[1:, cv2.CC_STAT_AREA]), 255, 0).astype(np.uint8)
+mask = cv2.morphologyEx(m, cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8))
 mask = cv2.GaussianBlur(mask, (0, 0), max(1.0, W / 2500))
+cv2.imwrite(f'{out}/mask_debug.jpg', cv2.resize(np.dstack([img[..., 0] // 2, img[..., 1] // 2, np.maximum(img[..., 2] // 2, mask)]), (W // 4, H // 4)))
 
 # ---- background: inpaint the hole ---------------------------------------
 hole = (mask > 8).astype(np.uint8) * 255
 hole = cv2.dilate(hole, np.ones((5, 5), np.uint8), iterations=max(1, W // 800))
+for a, b, c, d in C.get('inpaintExtra', []):
+    hole[int(b * H):int(d * H), int(a * W):int(c * W)] = 255
 small = 4
 img_s = cv2.resize(img, (W // small, H // small), interpolation=cv2.INTER_AREA)
 hole_s = cv2.resize(hole, (W // small, H // small), interpolation=cv2.INTER_NEAREST)
@@ -87,7 +142,7 @@ fg = np.dstack([img, mask])
 cv2.imwrite(f'{out}/fg.png', fg)
 
 # ---- foreground depth grid ----------------------------------------------
-GW = 768
+GW = 1024
 GH = int(round(GW / aspect))
 uu, vv = np.meshgrid((np.arange(GW) + 0.5) / GW, (np.arange(GH) + 0.5) / GH)
 behind = C.get('figureBehindTableM', 0.85)
@@ -105,11 +160,30 @@ Zf = Zt + behind
 
 mgrid = cv2.resize(mask, (GW, GH), interpolation=cv2.INTER_AREA) > 127
 dist = ndimage.distance_transform_edt(mgrid)
-bulge = 0.45 * np.clip(dist / (0.035 * GW), 0, 1) ** 0.6  # rounded bodies
-fig_depth = Zf - bulge
+bulge = 0.25 * np.clip(dist / (0.035 * GW), 0, 1) ** 0.6  # rounded bodies
+relief = np.zeros((GH, GW), np.float32)
+if disp_path:
+    disp = cv2.imread(disp_path, cv2.IMREAD_UNCHANGED).astype(np.float32)
+    if disp.ndim == 3:
+        disp = disp[..., 0]
+    disp = cv2.resize(disp, (GW, GH), interpolation=cv2.INTER_AREA)
+    fm = mgrid.astype(np.float32)
+    lo, hi = np.percentile(disp[mgrid], [3, 97])
+    dn = np.clip((disp - lo) / (hi - lo + 1e-6), 0, 1)
+
+    def masked_blur(x, sig):
+        return cv2.GaussianBlur(x * fm, (0, 0), sig) / (cv2.GaussianBlur(fm, (0, 0), sig) + 1e-6)
+
+    # band-pass: keep faces, arms and figure-vs-figure ordering, drop the global tilt
+    rel = dn - masked_blur(dn, 0.07 * GW)
+    rel = cv2.GaussianBlur(rel, (0, 0), 0.8)
+    rel /= np.percentile(np.abs(rel[mgrid]), 97) + 1e-6
+    relief = np.clip(rel, -1.2, 1.2) * C.get('reliefM', 0.5)
+    relief = np.where(vv >= tableTop, relief * 0.15, relief)
+fig_depth = Zf - bulge - relief
 table_plane = ray_depth_plane_y(vv, ytable)
-depth = np.where(vv >= tableTop, Zt, np.minimum(np.where(table_plane > 0, table_plane, np.inf), fig_depth))
-depth = np.minimum(depth, Zf)
+depth = np.where(vv >= tableTop, Zt - relief, np.minimum(np.where(table_plane > 0, table_plane, np.inf) - relief * 0.3, fig_depth))
+depth = np.minimum(depth, Zf + 0.3)
 # outside the mask, copy the nearest foreground depth so edge triangles don't stretch
 _, idx = ndimage.distance_transform_edt(~mgrid, return_indices=True)
 depth = depth[idx[0], idx[1]]

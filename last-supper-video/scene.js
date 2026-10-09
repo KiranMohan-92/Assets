@@ -62,20 +62,24 @@ function buildShots() {
   const heroFov = (2 * Math.atan(G.PW / 2 / Dp / (16 / 9)) * 180) / Math.PI;
   const face = subj('christFace', -0.15);
 
+  // camera on a circle around a pivot: a = 0 is straight in front, + swings to the right
+  const orbit = (pivot, a, r, h = 0) => pivot.clone().add(V(Math.sin(a) * r, h, Math.cos(a) * r));
+  const between = (a, b, k = 0.5) => a.clone().lerp(b, k);
+
   SHOTS = [
     // 1. the painting floats in darkness; slow push in
     [0, 4, (p) => ({
       pos: catmull([O.clone().add(V(0, -0.6, 16)), O.clone().add(V(0, -0.2, 7)), O.clone().add(V(0, 0, 2.5))], ease.io(p)),
       look: center, fov: 34 - 4 * p, roll: -2 + 2 * p, focus: 'look', ap: 0.6,
       fade: 1 - ease.out3(clamp(p * 2.2)), exposure: 0.85 + 0.15 * p, rays: 0.4 * p, lb: 1,
-      spot: [lerp(0.15, 0.7, p), 0.4, 1.4],
+      spot: [lerp(0.15, 0.7, p), 0.45, 1.4],
     })],
     // 2. through the picture plane, crane over the table
     [4, 8, (p) => {
       const e = ease.in3(p) * 0.6 + ease.io(p) * 0.4;
       return {
-        pos: catmull([O.clone().add(V(0, 0, 2.5)), W(0.5, 0.2, Dp + 0.5), W(0.5, 0.16, zT - 1.2)], e),
-        look: catmull([center, W(0.5, 0.5, zT), subj('bread')], ease.io(p)),
+        pos: catmull([O.clone().add(V(0, 0, 2.5)), W(0.5, 0.25, Dp + 0.3), W(0.5, 0.3, zT - 1.3)], e),
+        look: catmull([center, W(0.5, 0.6, zT), subj('bread')], ease.io(p)),
         fov: 40 - 6 * p, roll: 3 * Math.sin(p * Math.PI), focus: 'look', ap: 1.2, exposure: 1, rays: 0.6 + 0.4 * p, lb: 1,
         spot: [0.5, 0.6, 1.2], shake: 0.002 + 0.01 * ease.in3(p),
       };
@@ -87,81 +91,89 @@ function buildShots() {
         pos: catmull([face.clone().add(V(0.4, 0.3, 7)), face.clone().add(V(0.05, 0.08, 1.25))], e),
         look: face, fov: 52 - 26 * e, roll: 4 * (1 - e), focus: face, ap: 2.6,
         flash: Math.max(0, 1 - p * 6), shake: 0.05 * Math.max(0, 1 - p * 3) + 0.004, ca: 1 - e, exposure: 1.05, rays: 1, lb: 1,
-        spot: [0.5, 0.38, 0.6],
+        spot: [0.5, 0.48, 0.6],
       };
     }],
-    // 4. lateral truck across the left group
-    [10, 12, (p) => ({
-      pos: catmull([W(0.33, 0.44, zF - 2.4), W(0.10, 0.42, zF - 2.0)], ease.io(p)),
-      look: catmull([subj('groupLeft').add(V(1.2, 0, 0)), subj('groupLeft').add(V(-0.5, 0, 0))], ease.io(p)),
-      fov: 36, roll: lerp(-4, 2, p), focus: 'look', ap: 2.0, shake: 0.004, ca: 0.3 * (1 - p), exposure: 1, rays: 0.7, lb: 1,
-      flash: Math.max(0, 0.5 - p * 4), spot: [0.18, 0.42, 0.6],
-    })],
+    // 4. orbit across the left trio: Bartholomew -> James the Less -> Andrew
+    [10, 12, (p) => {
+      const e = ease.io(p), piv = subj('jamesMinor', -0.1);
+      const look = catmull([subj('bartholomew'), subj('jamesMinor'), subj('andrew')], e);
+      return {
+        pos: orbit(piv, lerp(-0.45, 0.5, e), 2.2, 0.15), look, fov: 34, roll: lerp(-4, 3, e), focus: 'look', ap: 2.2,
+        shake: 0.004, ca: 0.3 * (1 - p), exposure: 1, rays: 0.7, lb: 1, flash: Math.max(0, 0.5 - p * 4), spot: [0.19, 0.5, 0.7],
+      };
+    }],
     // 5. low-angle push on Judas, Peter and John
     [12, 14, (p) => ({
-      pos: catmull([W(0.37, 0.66, zF - 3.4), W(0.39, 0.55, zF - 1.5)], ease.out3(p)),
-      look: subj('judas').add(V(0.25, 0.1, 0)), fov: 38 - 6 * p, roll: lerp(5, 1, p), focus: subj('judas'), ap: 2.6,
+      pos: catmull([W(0.31, 0.72, zF - 3.2), W(0.32, 0.6, zF - 1.6)], ease.out3(p)),
+      look: between(subj('judas'), subj('peter'), 0.3), fov: 38 - 6 * p, roll: lerp(5, 1, p), focus: subj('judas'), ap: 2.6,
       flash: Math.max(0, 0.6 - p * 5), shake: 0.006, ca: 0.6 * (1 - ease.out3(p)), exposure: 0.95, rays: 0.8, lb: 1,
-      spot: [0.4, 0.42, 0.5],
+      spot: [0.31, 0.53, 0.5],
     })],
-    // 6. orbit around Thomas, James and Philip
+    // 6. swing between Thomas, James the Greater and Philip
     [14, 16, (p) => {
-      const c = subj('philip').add(V(-0.25, 0, 0));
-      const a = lerp(0.55, -0.35, ease.io(p)), r = 2.8;
+      const e = ease.io(p), piv = subj('jamesMajor', -0.1);
       return {
-        pos: c.clone().add(V(Math.sin(a) * r, 0.25 + 0.2 * p, Math.cos(a) * r)), look: c, fov: 34, roll: lerp(-3, 3, p),
-        focus: 'look', ap: 2.2, flash: Math.max(0, 0.5 - p * 4), shake: 0.004, exposure: 1, rays: 0.8, lb: 1,
-        spot: [0.66, 0.4, 0.6],
+        pos: orbit(piv, lerp(0.75, -0.55, e), 2.4, 0.2 + 0.15 * p),
+        look: catmull([subj('thomas'), subj('jamesMajor'), subj('philip')], e), fov: 33, roll: lerp(-3, 3, p),
+        focus: 'look', ap: 2.4, flash: Math.max(0, 0.5 - p * 4), shake: 0.004, exposure: 1, rays: 0.8, lb: 1,
+        spot: [0.62, 0.5, 0.6],
       };
     }],
-    // 7. dutch pull-out on Matthew, Thaddeus and Simon
-    [16, 18, (p) => ({
-      pos: catmull([W(0.85, 0.43, zF - 1.1), W(0.80, 0.47, zF - 3.6)], ease.out3(p)),
-      look: subj('groupRight'), fov: 28 + 18 * ease.out3(p), roll: lerp(9, -3, ease.out3(p)), focus: 'look', ap: 2.0,
-      flash: Math.max(0, 0.5 - p * 4), shake: 0.005, ca: 0.4 * (1 - p), exposure: 1, rays: 0.8, lb: 1,
-      spot: [0.84, 0.42, 0.6],
-    })],
+    // 7. dutch pull-out rotating across Matthew, Thaddeus and Simon
+    [16, 18, (p) => {
+      const e = ease.out3(p), piv = subj('thaddeus', -0.1);
+      return {
+        pos: orbit(piv, lerp(0.1, -0.5, e), lerp(1.4, 3.0, e), 0.1),
+        look: catmull([subj('simon'), subj('thaddeus'), subj('matthew')], e), fov: 30 + 12 * e, roll: lerp(9, -3, e),
+        focus: 'look', ap: 2.0, flash: Math.max(0, 0.5 - p * 4), shake: 0.005, ca: 0.4 * (1 - p), exposure: 1, rays: 0.8, lb: 1,
+        spot: [0.85, 0.5, 0.6],
+      };
+    }],
     // 8. fly over Christ's head toward the central window
     [18, 20, (p) => {
       const e = ease.in3(p) * 0.7 + p * 0.3;
       return {
-        pos: catmull([W(0.5, 0.6, zT - 1.6), W(0.5, 0.21, zF + 0.3), W(0.5, 0.32, zB - 1.6)], e),
-        look: catmull([face, W(0.5, 0.33, zB)], ease.io(clamp(p * 1.6))),
+        pos: catmull([W(0.505, 0.62, zT - 1.6), W(0.505, 0.36, zF + 0.3), W(0.505, 0.44, zB - 1.6)], e),
+        look: catmull([face, W(0.505, 0.46, zB)], ease.io(clamp(p * 1.6))),
         fov: 38 + 14 * e, roll: 6 * Math.sin(p * Math.PI), focus: 'look', ap: 1.2, shake: 0.004 + 0.012 * e,
         exposure: 1 + 0.8 * ease.in3(p), flash: ease.in3(clamp((p - 0.85) / 0.15)), rays: 1 + p, ca: e * 0.6, lb: 1,
-        spot: [0.5, 0.33, 0.5],
+        spot: [0.505, 0.46, 0.5],
       };
     }],
     // 9. rip back out of the window, revealing the whole room
     [20, 22, (p) => {
       const e = ease.outExpo(p);
       return {
-        pos: catmull([W(0.5, 0.33, zB - 2.2), W(0.5, 0.18, zF + 0.2), O.clone().add(V(0, 0.15, -1.0))], e),
-        look: catmull([W(0.5, 0.33, zB), W(0.5, 0.42, zF)], e), fov: 60 - 18 * e, roll: lerp(-10, 0, e),
+        pos: catmull([W(0.505, 0.45, zB - 2.2), W(0.505, 0.33, zF + 0.2), O.clone().add(V(0, 0.15, -1.0))], e),
+        look: catmull([W(0.505, 0.46, zB), W(0.505, 0.52, zF)], e), fov: 60 - 18 * e, roll: lerp(-10, 0, e),
         focus: 'look', ap: 0.9, flash: Math.max(0, 1 - p * 5), shake: 0.03 * (1 - e) + 0.003, ca: 1 - e,
-        exposure: 1.3 - 0.3 * e, rays: 1.4, lb: 1, spot: [0.5, 0.45, 1.0],
+        exposure: 1.3 - 0.3 * e, rays: 1.4, lb: 1, spot: [0.5, 0.5, 1.0],
       };
     }],
-    // 10. snap zooms on beat: hands, Judas, Peter, Thomas
-    ...['christHands', 'judas', 'peter', 'thomas'].map((name, i) => [22 + i * 0.5, 22.5 + i * 0.5, (p) => {
+    // 10. snap zooms on beat: Christ's hand, Judas, John, Thomas's finger
+    ...['christHands', 'judas', 'john', 'thomasFinger'].map((name, i) => [22 + i * 0.5, 22.5 + i * 0.5, (p) => {
       const tgt = subj(name, -0.05), e = ease.outExpo(clamp(p * 1.4));
       const side = i % 2 ? 1 : -1;
       return {
-        pos: tgt.clone().add(V(0.35 * side, 0.25, lerp(2.6, 0.95, e) + 0.15 * p)), look: tgt, fov: lerp(44, 30, e),
-        roll: side * lerp(7, 3, e), focus: tgt, ap: 3.0, flash: Math.max(0, 0.7 - p * 4), shake: 0.02 * (1 - e) + 0.003,
+        pos: orbit(tgt, side * lerp(0.45, 0.3, e), lerp(2.6, 1.3, e) + 0.12 * p, 0.2), look: tgt, fov: lerp(44, 30, e),
+        roll: side * lerp(7, 3, e), focus: tgt, ap: 2.2, flash: Math.max(0, 0.7 - p * 4), shake: 0.02 * (1 - e) + 0.003,
         ca: 0.8 * (1 - e), exposure: 1, rays: 1, lb: 1, spot: [G.subjects[name][0], G.subjects[name][1], 0.4],
       };
     }]),
     // 11. silence: black
     [24, 24.5, () => ({ pos: O.clone(), look: center, fov: 40, fade: 1, lb: 1 })],
-    // 12. epic crane: low left, sweep across and rise back to the full room
+    // 12. epic: rotate around Christ from John's side to Thomas's side, then rise back to the whole room
     [24.5, 29, (p) => {
-      const e = ease.io3(p);
+      const piv = subj('christFace', -0.2).add(V(0, -0.25, 0));
+      const k = ease.io3(clamp(p / 0.78)), back = ease.io3(clamp((p - 0.62) / 0.38));
+      const orb = orbit(piv, lerp(-0.85, 0.8, k), lerp(2.3, 2.9, k), lerp(0.05, 0.45, k));
+      const wide = O.clone().add(V(0, 0.1, 3.0));
+      const look = between(catmull([subj('john'), face, subj('thomas')], k), center, back);
       return {
-        pos: catmull([W(0.2, 0.74, zT - 2.2), W(0.38, 0.62, zT - 3.4), W(0.62, 0.5, Dp + 0.2), O.clone().add(V(0, 0.1, 3.0))], e),
-        look: catmull([face, face, center], e), fov: lerp(36, 40, e), roll: lerp(-5, 0, e), focus: 'look', ap: lerp(2.2, 0.5, e),
-        flash: Math.max(0, 1 - p * 10), shake: 0.03 * Math.max(0, 1 - p * 6) + 0.002, ca: Math.max(0, 1 - p * 5),
-        exposure: 1.05, rays: 1.5 - 0.5 * e, lb: 1, spot: [0.5, 0.4, 1.4 * (1 - e) + 0.6],
+        pos: between(orb, wide, back), look, fov: lerp(34, 40, back), roll: lerp(-4, 3, k) * (1 - back), focus: 'look',
+        ap: lerp(2.2, 0.5, back), flash: Math.max(0, 1 - p * 10), shake: 0.03 * Math.max(0, 1 - p * 6) + 0.002,
+        ca: Math.max(0, 1 - p * 5), exposure: 1.05, rays: 1.5 - 0.5 * back, lb: 1, spot: [0.5, 0.5, 1.4 * (1 - back) + 0.6],
       };
     }],
     // 13. settle on the exact original viewpoint; title
@@ -171,7 +183,7 @@ function buildShots() {
         pos: catmull([O.clone().add(V(0, 0.1, 3.0)), O.clone()], e), look: catmull([center, O.clone().add(V(0, 0, -1))], e),
         shift: heroShift * e, fov: lerp(40, heroFov, e), roll: 0, focus: Dp, ap: 0.3 * (1 - e),
         exposure: 1 - 0.35 * ease.io(clamp((p - 0.3) / 0.4)), rays: 1, lb: 1 - 0.6 * e, fade: ease.in3(clamp((p - 0.8) / 0.2)),
-        spot: [0.5, 0.4, 2.0],
+        spot: [0.5, 0.5, 2.0],
       };
     }],
   ];
@@ -288,9 +300,9 @@ void main(){
   vec4 mv = modelViewMatrix * vec4(p, 1.);
   float z = -mv.z;
   float coc = clamp(aperture * abs(z - focus) / max(z, .01) * .012, 0., .03);
-  gl_PointSize = clamp((0.012 / z + coc) * pxScale, 1., 90.);
+  gl_PointSize = clamp((0.005 / z + coc * 0.6) * pxScale, 1., 48.);
   vBlur = coc * pxScale;
-  vA = (.35 + .65 * fract(seed * 13.7)) / (1. + vBlur * vBlur * .015) * smoothstep(.2, 1.2, z);
+  vA = (.15 + .35 * fract(seed * 13.7)) / (1. + vBlur * vBlur * .03) * smoothstep(.2, 1.2, z);
   gl_Position = projectionMatrix * mv;
 }`;
 const dustFS = `uniform sampler2D tDep; uniform vec2 res; uniform float near; uniform float far; varying float vA; varying float vBlur;
@@ -393,7 +405,7 @@ window.init = async (cfg) => {
 
   // dust motes in front of the figures
   dustScn = new THREE.Scene();
-  const n = 1800, dp = new Float32Array(n * 3), ds = new Float32Array(n);
+  const n = 700, dp = new Float32Array(n * 3), ds = new Float32Array(n);
   let s = 12345; const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);
   for (let i = 0; i < n; i++) {
     const p = W(0.05 + 0.9 * rnd(), 0.08 + 0.75 * rnd(), lerp(G.Dp * 0.2, G.table.Zf + 3, rnd()));
