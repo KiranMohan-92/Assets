@@ -492,60 +492,233 @@ for i in range(1, n):
     rolls += 1
 print('bread rolls placed:', rolls)
 
-# ---- the thirteen apostles -------------------------------------------------------
-F = np.load(f'{WORK}/figures.npz')
-exts, zmap, zfig, names = F['exts'], F['zmap'], F['zfig'], list(F['names'])
-GWf, GHf = map(int, F['grid'])
-STEP = 2
-gw, gh = GWf // STEP, GHf // STEP
-zmed = float(np.median(zfig[1:]))
-cell_m = PW / gw * FIG_BASE / Dp
-for i in range(1, 14):
-    e = cv2.resize(exts[i], (gw, gh), interpolation=cv2.INTER_NEAREST)
-    e[cv2.erode((e > 0).astype(np.uint8), np.ones((3, 3), np.uint8)) == 0] = 0   # drop the wall-coloured fringe
-    m = e > 0
-    if m.sum() < 50:
+# ---- the thirteen apostles: full 3D people ----------------------------------------
+# MakeHuman (CC0) bodies, posed to the fresco's gestures, scaled to Leonardo's
+# larger-than-life proportions and placed so each face lands exactly where it is
+# painted.  Robes, cloaks, hair and skin take their colours from the painting.
+sys.path.insert(0, HERE)
+import mh_human as mh                       # noqa: E402
+from apostles import APOSTLES               # noqa: E402
+
+SCALE = (YTAB - YB) / 0.76                  # Leonardo's table is ~1.5x a real one
+FLOOR = YB
+
+
+def bl(p):
+    return Vector(to_bl([p])[0])
+
+
+def table_point(u, v):
+    py = (0.5 - v) * PH
+    z = Dp * (YTAB - O1) / (py - O1) if py < O1 - 1e-6 else ZT + 0.3
+    z = float(np.clip(z, ZT + 0.06, ZTB - 0.08))
+    p = W(u, v, z)
+    p[1] = YTAB + 0.035 * SCALE
+    return p
+
+
+heads = {a['name']: W(*a['head'], a['z']) for a in APOSTLES}
+
+
+def target(a, spec):
+    if spec is None:
+        return None
+    if spec[0] == 'table':
+        return bl(table_point(spec[1], spec[2]))
+    return bl(W(spec[1], spec[2], spec[3]))
+
+
+def look_point(a):
+    if a['look'] == 'table':
+        # gaze down the table toward the viewer rather than straight into the lap
+        p = W(a['head'][0], 0.66, ZT - 1.2)
+        p[1] = YTAB
+        return bl(p)
+    return bl(heads[a['look']])
+
+
+def head_world(body):
+    """midpoint between the eyes, posed or baked"""
+    bpy.context.view_layer.update()
+    arm = body.parent if body.parent and body.parent.type == 'ARMATURE' else None
+    if arm is None:
+        arm = next((m.object for m in body.modifiers if m.type == 'ARMATURE' and m.object), None)
+    if arm is not None and 'eye.L' in arm.pose.bones:
+        return (arm.matrix_world @ arm.pose.bones['eye.L'].head + arm.matrix_world @ arm.pose.bones['eye.R'].head) / 2
+    dg = bpy.context.evaluated_depsgraph_get()
+    eyes = [c for c in body.children_recursive if 'eye' in c.name.lower()]
+    pts = [e.evaluated_get(dg).matrix_world @ Vector(np.mean([v.co for v in e.data.vertices], 0)) for e in eyes if e.type == 'MESH']
+    return sum(pts, Vector()) / len(pts)
+
+
+def delete_tree(ob):
+    for c in list(ob.children_recursive) + [ob]:
+        bpy.data.objects.remove(c, do_unlink=True)
+
+
+def make_person(a, i, height, loc, apply):
+    skin = srgb2lin(sample(*a['skin'], 5))
+    arm = mh.build_human(f"apostle_{a['name']}", gender=1.0, age=a['age'], muscle=0.5,
+                         weight=0.45 if a['age'] < 0.5 else 0.55,
+                         ethnic=(0.35, 0.0, 0.65) if a.get('skin_dark') else (0.05, 0.0, 0.95),
+                         height_m=height, face_seed=i * 7 + 3, skin_rgb=skin)
+    mh.place_human(arm, location=loc, rot_z_deg=a['face'])
+    body = mh.pose_human(arm, sit=a['sit'], lean_fwd=a['lean_fwd'], lean_side=a['lean_side'], twist=a['twist'],
+                         head_target=look_point(a), head_tilt=a.get('tilt', 0),
+                         l_hand=target(a, a['l_hand']), r_hand=target(a, a['r_hand']), apply=apply)
+    return body
+
+
+people = 0
+for i, a in enumerate(APOSTLES):
+    goal = bl(heads[a['name']])
+    height = 1.80 * SCALE * (0.97 + 0.06 * ((i * 37) % 7) / 6)
+    # torso sits roughly under the head, a little further back from the table
+    loc = Vector((goal.x, goal.y + 0.10 * SCALE, FLOOR))
+    for it in range(3):
+        body = make_person(a, i, height, loc, apply=False)
+        h = head_world(body)
+        arm = body.parent if body.parent and body.parent.type == 'ARMATURE' else next(
+            (m.object for m in body.modifiers if m.type == 'ARMATURE' and m.object), None)
+        delete_tree(body)
+        if arm is not None and arm.name in bpy.data.objects:
+            delete_tree(arm)
+        # one consistent build for everyone; the bench / stance height absorbs the
+        # vertical difference (legs are hidden behind the tablecloth)
+        loc.z += goal.z - h.z
+        loc.x += goal.x - h.x
+        loc.y += goal.y - h.y
+    body = make_person(a, i, height, loc, apply=True)
+    tunic = srgb2lin(sample(*a['tunic'], 10))
+    mantle = srgb2lin(sample(*a['mantle'], 10)) if a.get('mantle') else None
+    mh.add_robe(body, tunic_rgb=tunic, mantle_rgb=mantle, mantle_over=a.get('mantle_over') or 'L')
+    mh.add_hair(body, hair_rgb=srgb2lin(sample(*a['hair_c'], 5)), style=a['hair'], beard=a['beard'])
+    h = head_world(body)
+    print(f"{a['name']:12s} height {height:.2f} m  floor offset {loc.z - FLOOR:+.2f} m  head error {(h - goal).length * 100:.1f} cm", flush=True)
+    people += 1
+print('apostles built:', people)
+
+# ---- fresco detail on the people -------------------------------------------------------
+# Each person's surfaces that Leonardo's eye can see AND that fall inside that
+# apostle's own painted silhouette take the fresco's pixels (faces, beards, folds);
+# everything else keeps the 3D person's own palette colours.
+from mathutils.bvhtree import BVHTree   # noqa: E402
+
+FIGS = np.load(f'{WORK}/figures.npz')
+own_masks = {}
+for i, a in enumerate(APOSTLES, 1):
+    m = (FIGS['exts'][i] == 1).astype(np.float32)
+    m = cv2.dilate(m, np.ones((5, 5), np.uint8))
+    own_masks[a['name']] = cv2.GaussianBlur(m, (0, 0), 2.0)
+MGH, MGW = own_masks['christ'].shape
+STRENGTH = {'skin': 0.0, 'hair': 0.45, 'beard': 0.45, 'brow': 0.0, 'robe': 0.55, 'mantle': 0.55, 'tunic': 0.55}
+eye_bl = Vector((O0, 0.0, O1))
+person_objs = {}
+for a in APOSTLES:
+    root = bpy.data.objects.get(f"apostle_{a['name']}_body")
+    if root is None:
         continue
-    vis = e == 1
-    zm = cv2.resize(zmap, (gw, gh), interpolation=cv2.INTER_AREA)
-    # own depth everywhere inside the extended silhouette (hidden parts copy nearest visible)
-    _, (iy, ix) = ndimage.distance_transform_edt(~vis, return_indices=True)
-    zown = zm[iy, ix]
-    zown = cv2.GaussianBlur(zown.astype(np.float32), (0, 0), 1.5)
-    relief = np.clip(zown - zfig[i], -2.5, 2.5) * FIG_RELIEF
-    zbase = FIG_BASE + FIG_SPREAD * (zfig[i] - zmed)
-    dist = ndimage.distance_transform_edt(m) * cell_m
-    roundf = np.sqrt(np.clip(dist / 0.30, 0, 1))
-    zfront = np.maximum(zbase + relief - 0.10 * roundf, ZTB - 0.12)
-    zback = zfront + 0.55 * roundf
-    # vertices on cell corners
-    ys, xs = np.nonzero(m)
-    idx = -np.ones((gh, gw), np.int64)
-    idx[ys, xs] = np.arange(len(ys))
-    uu, vv_ = (xs + 0.5) / gw, (ys + 0.5) / gh
-    kf = zfront[ys, xs] / Dp
-    kb = zback[ys, xs] / Dp
-    px, py = (uu - 0.5) * PW, (0.5 - vv_) * PH
-    front = np.stack([O0 + (px - O0) * kf, O1 + (py - O1) * kf, zfront[ys, xs]], 1)
-    back = np.stack([O0 + (px - O0) * kb, O1 + (py - O1) * kb, zback[ys, xs]], 1)
-    edge = dist[ys, xs] <= cell_m * 1.01        # silhouette: front and back meet
-    bidx = np.where(edge, np.arange(len(ys)), len(ys) + np.cumsum(~edge) - 1)
-    verts = np.concatenate([front, back[~edge]])
-    a, b = idx[:-1, :-1], idx[:-1, 1:]
-    c, d = idx[1:, 1:], idx[1:, :-1]
-    ok = (a >= 0) & (b >= 0) & (c >= 0) & (d >= 0)
-    qf = np.stack([a[ok], d[ok], c[ok], b[ok]], 1)      # facing the hero camera
-    qb = bidx[qf][:, ::-1]
-    keep = np.array([len(set(q)) == 4 for q in qb])
-    faces = np.concatenate([qf, qb[keep]])
-    visv = np.concatenate([vis[ys, xs].astype(np.float32), np.zeros((~edge).sum(), np.float32)])
-    pal = load_img(f'{WORK}/palette_{i:02d}.jpg', f'palette_{i:02d}')
-    mat = proj_material(f'apostle_{names[i - 1]}', img_paint, (0.5, 0.4, 0.3), emission=0.3, rough=0.8,
-                        palette_img=pal, vis_attr='vis')
-    ob = make_mesh(f'apostle_{names[i - 1]}', verts, faces, mat, attrs={'vis': visv}, smooth=True)
-    sm = ob.modifiers.new('smooth', 'SMOOTH')
-    sm.factor, sm.iterations = 0.5, 4
-print('apostles built:', len([o for o in bpy.data.objects if o.name.startswith('apostle_')]))
+    person_objs[a['name']] = [o for o in [root] + list(root.children_recursive)
+                              if o.type == 'MESH' and 'eye' not in o.name.lower()]
+dg = bpy.context.evaluated_depsgraph_get()
+occluders = [o for o in bpy.data.objects if o.type == 'MESH' and (o.name.startswith('apostle_') or o.parent)
+             or o.name in ('cloth', 'cloth_front')]
+all_v, all_f = [], []
+for o in set(occluders) | {o for objs in person_objs.values() for o in objs}:
+    me = o.evaluated_get(dg).to_mesh()
+    vs = np.array([o.matrix_world @ v.co for v in me.vertices])
+    off = sum(len(x) for x in all_v)
+    all_f += [[off + i for i in p.vertices] for p in me.polygons]
+    all_v.append(vs)
+    o.evaluated_get(dg).to_mesh_clear()
+tree = BVHTree.FromPolygons([tuple(v) for v in np.concatenate(all_v)], all_f, epsilon=0.0)
+
+
+def fresco_blend(mat, strength):
+    nt = mat.node_tree
+    bsdf = next((n for n in nt.nodes if n.type == 'BSDF_PRINCIPLED'), None)
+    if bsdf is None:
+        return
+    inp = bsdf.inputs['Base Color']
+    src = inp.links[0].from_socket if inp.links else None
+    uv = nt.nodes.new('ShaderNodeUVMap')
+    uv.uv_map = 'proj'
+    tex = nt.nodes.new('ShaderNodeTexImage')
+    tex.image, tex.extension, tex.interpolation = img_paint, 'EXTEND', 'Cubic'
+    nt.links.new(uv.outputs['UV'], tex.inputs['Vector'])
+    at = nt.nodes.new('ShaderNodeAttribute')
+    at.attribute_name = 'own'
+    geo = nt.nodes.new('ShaderNodeNewGeometry')
+    eye = nt.nodes.new('ShaderNodeCombineXYZ')
+    eye.inputs['X'].default_value, eye.inputs['Y'].default_value, eye.inputs['Z'].default_value = O0, 0.0, O1
+    dv = nt.nodes.new('ShaderNodeVectorMath')
+    dv.operation = 'SUBTRACT'
+    nt.links.new(eye.outputs['Vector'], dv.inputs[0])
+    nt.links.new(geo.outputs['Position'], dv.inputs[1])
+    dn = nt.nodes.new('ShaderNodeVectorMath')
+    dn.operation = 'NORMALIZE'
+    nt.links.new(dv.outputs['Vector'], dn.inputs[0])
+    dot = nt.nodes.new('ShaderNodeVectorMath')
+    dot.operation = 'DOT_PRODUCT'
+    nt.links.new(dn.outputs['Vector'], dot.inputs[0])
+    nt.links.new(geo.outputs['Normal'], dot.inputs[1])
+    facing = nt.nodes.new('ShaderNodeMapRange')
+    facing.inputs['From Min'].default_value, facing.inputs['From Max'].default_value = 0.15, 0.45
+    nt.links.new(dot.outputs['Value'], facing.inputs['Value'])
+    f1 = nt.nodes.new('ShaderNodeMath')
+    f1.operation = 'MULTIPLY'
+    nt.links.new(at.outputs['Fac'], f1.inputs[0])
+    nt.links.new(facing.outputs['Result'], f1.inputs[1])
+    f2 = nt.nodes.new('ShaderNodeMath')
+    f2.operation = 'MULTIPLY'
+    f2.inputs[1].default_value = strength
+    nt.links.new(f1.outputs['Value'], f2.inputs[0])
+    mix = nt.nodes.new('ShaderNodeMix')
+    mix.data_type = 'RGBA'
+    nt.links.new(f2.outputs['Value'], mix.inputs['Factor'])
+    if src is not None:
+        nt.links.new(src, mix.inputs['A'])
+    else:
+        mix.inputs['A'].default_value = inp.default_value
+    nt.links.new(tex.outputs['Color'], mix.inputs['B'])
+    nt.links.new(mix.outputs['Result'], inp)
+
+
+done_mats = {}
+for name, objs in person_objs.items():
+    mask = own_masks[name]
+    for o in objs:
+        me = o.data
+        wv = np.array([o.matrix_world @ v.co for v in me.vertices])
+        P = np.stack([wv[:, 0], wv[:, 2], wv[:, 1]], 1)        # back to painting space
+        uvs = proj(P)
+        # visible from Leonardo's eye?
+        vis = np.zeros(len(wv), np.float32)
+        for k, w in enumerate(wv):
+            d = Vector(w) - eye_bl
+            L = d.length
+            hit = tree.ray_cast(eye_bl, d / L, L - 0.03)
+            vis[k] = 1.0 if hit[0] is None else 0.0
+        mx = np.clip((uvs[:, 0] * MGW).astype(int), 0, MGW - 1)
+        my = np.clip((uvs[:, 1] * MGH).astype(int), 0, MGH - 1)
+        own = mask[my, mx] * vis
+        a = me.attributes.get('own') or me.attributes.new('own', 'FLOAT', 'POINT')
+        a.data.foreach_set('value', own.astype(np.float32))
+        uv = me.uv_layers.get('proj') or me.uv_layers.new(name='proj')
+        lv = np.zeros(len(me.loops), np.int64)
+        me.loops.foreach_get('vertex_index', lv)
+        luv = uvs[lv].copy()
+        luv[:, 1] = 1 - luv[:, 1]
+        uv.data.foreach_set('uv', luv.astype(np.float32).ravel())
+        for slot in o.material_slots:
+            m = slot.material
+            if m is None or m.name in done_mats:
+                continue
+            key = next((k for k in STRENGTH if k in m.name.lower()), None)
+            if STRENGTH.get(key, 0.5) > 0:
+                fresco_blend(m, STRENGTH.get(key, 0.5))
+            done_mats[m.name] = True
+    print('fresco detail:', name, flush=True)
 
 # ---- lighting -----------------------------------------------------------------------
 world = bpy.data.worlds.new('world')
@@ -599,7 +772,6 @@ scene.view_settings.look = 'None'
 scene.render.resolution_x, scene.render.resolution_y = 1920, 1080
 scene.render.image_settings.file_format = 'PNG'
 json.dump({'Dp': Dp, 'PW': PW, 'PH': PH, 'O': [O0, O1], 'room': R, 'ZT': ZT, 'ZTB': ZTB, 'YTAB': YTAB,
-           'windows': wx, 'win_y': [wy0, wy1], 'fig_base': FIG_BASE, 'fig_spread': FIG_SPREAD, 'zmed': zmed,
-           'zfig': zfig.tolist(), 'names': names}, open(f'{WORK}/scene_info.json', 'w'), indent=1)
+           'windows': wx, 'win_y': [wy0, wy1], 'heads': {a['name']: [*a['head'], a['z']] for a in APOSTLES}}, open(f'{WORK}/scene_info.json', 'w'), indent=1)
 bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(OUT))
 print('saved', OUT, 'objects:', len(bpy.data.objects))

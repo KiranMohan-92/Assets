@@ -36,8 +36,7 @@ I = json.load(open(f'{WORK}/scene_info.json'))
 Dp, PW, PH = I['Dp'], I['PW'], I['PH']
 O0, O1 = I['O']
 ZT, ZB = I['ZT'], -I['room']['zb']
-names = I['names']
-zfig = dict(zip(names, I['zfig'][1:]))
+HEADZ = {k: v[2] for k, v in I['heads'].items()}
 
 
 # ------------------------------------------------------------------ geometry helpers
@@ -58,7 +57,7 @@ HEADS = {'bartholomew': (0.157, 0.483), 'jamesMinor': (0.190, 0.480), 'andrew': 
 
 
 def figz(name):
-    return I['fig_base'] + I['fig_spread'] * (zfig[name] - I['zmed']) - 0.12
+    return HEADZ[name] - 0.12
 
 
 def subj(name, dv=0.0, dz=0.0):
