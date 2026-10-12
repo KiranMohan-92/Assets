@@ -28,3 +28,7 @@ BLENDER=/path/to/blender ./render_on_laptop.sh     # macOS: /Applications/Blende
 This downloads the figure meshes and textures (about 70 MB), builds `set.blend`, renders the 7 s flight on the GPU at 1080×1920 with 64 samples, then adds the painting dissolve, grade and score, giving **`true3d/sample_3d.mp4`**. Re-running resumes where it stopped.
 
 It also needs python3 with numpy, scipy and pillow (`pip install numpy scipy pillow`).
+
+## Sample render
+
+7 s, 1080×1920, CPU-rendered at 720×1280 and upscaled: https://d2ol7oe51mr4n9.cloudfront.net/user_2zHlGJB9WmlHiGuHON7heHIhpuF/a6c2db85-5a34-45bb-8585-e78ee106eb9b.mp4

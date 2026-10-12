@@ -29,7 +29,7 @@ ffmpeg -y -loglevel error -ss $START -t $TOTAL -i score.wav -af "afade=t=in:d=0.
 
 # grade: warm bloom + haze lift, contrast, vignette, grain
 ffmpeg -y -loglevel error -i joined.mp4 -i score_cut.wav -filter_complex "\
-[0:v]split[a][b];\
+[0:v]format=gbrp,split[a][b];\
 [b]gblur=sigma=28,eq=brightness=0.02:saturation=1.2,colorbalance=rs=0.10:gs=0.04:bs=-0.06[glow];\
 [a][glow]blend=all_mode=screen:all_opacity=0.28,\
 eq=contrast=1.10:saturation=1.06:gamma=0.97,\
