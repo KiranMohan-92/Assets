@@ -25,4 +25,6 @@ cd last-supper-video/true3d
 BLENDER=/path/to/blender ./render_on_laptop.sh     # macOS: /Applications/Blender.app/Contents/MacOS/Blender
 ```
 
-This downloads the figure meshes and textures (about 70 MB), builds `set.blend`, and renders the 7 s sample as `frames/` at 1080×1920 with 64 samples on the GPU.
+This downloads the figure meshes and textures (about 70 MB), builds `set.blend`, renders the 7 s flight on the GPU at 1080×1920 with 64 samples, then adds the painting dissolve, grade and score, giving **`true3d/sample_3d.mp4`**. Re-running resumes where it stopped.
+
+It also needs python3 with numpy, scipy and pillow (`pip install numpy scipy pillow`).
