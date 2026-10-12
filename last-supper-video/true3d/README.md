@@ -32,3 +32,8 @@ It also needs python3 with numpy, scipy and pillow (`pip install numpy scipy pil
 ## Sample render
 
 7 s, 1080×1920, CPU-rendered at 720×1280 and upscaled: https://d2ol7oe51mr4n9.cloudfront.net/user_2zHlGJB9WmlHiGuHON7heHIhpuF/a6c2db85-5a34-45bb-8585-e78ee106eb9b.mp4
+
+## Hyperreal sample (AI re-render of the 3D layout)
+
+The 3D figures read as statues, so frames from the 3D flight were re-rendered hyperreal with gpt-image-2.5, keeping the same camera and poses (`look/3d_vs_hyperreal.jpg`). Kling 3.0 Omni then animated camera-only moves between those keyframes. The edit opens on the real fresco dissolving into the scene. 11 s, 1080×1920:
+https://d2ol7oe51mr4n9.cloudfront.net/user_2zHlGJB9WmlHiGuHON7heHIhpuF/d7656832-6ca2-4cf7-87a6-fc436e14a4f9.mp4
