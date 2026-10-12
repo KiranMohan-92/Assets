@@ -15,3 +15,14 @@ The painting dissolves into the 3D world at the start and comes back at the end.
   4. It comes round to find Christ.
 - **Finish:** `finish_sample.sh` handles the opening dissolve from the real fresco (aligned to the first frame), plus bloom, haze, grade, grain and the score.
 - **Helpers:** `preview_glb.py` renders turntable checks of the meshes, and `wide_check.py` renders establishing views of the set.
+
+## Render on your own GPU
+
+Needs Blender 4.2+, curl and ffmpeg. It works with NVIDIA (OptiX/CUDA), AMD (HIP) or Apple Silicon (Metal) GPUs.
+
+```bash
+cd last-supper-video/true3d
+BLENDER=/path/to/blender ./render_on_laptop.sh     # macOS: /Applications/Blender.app/Contents/MacOS/Blender
+```
+
+This downloads the figure meshes and textures (about 70 MB), builds `set.blend`, and renders the 7 s sample as `frames/` at 1080×1920 with 64 samples on the GPU.

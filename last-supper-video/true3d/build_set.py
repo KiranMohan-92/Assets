@@ -12,8 +12,9 @@ import math, os, sys
 import bpy
 from mathutils import Vector
 
-A = os.path.abspath(sys.argv[1])
-OUT = os.path.abspath(sys.argv[2])
+ARGV = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else sys.argv[1:]   # works as bpy module or `blender -b -P`
+A = os.path.abspath(ARGV[0])
+OUT = os.path.abspath(ARGV[1])
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 sc = bpy.context.scene

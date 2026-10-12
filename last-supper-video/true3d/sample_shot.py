@@ -8,8 +8,9 @@ import math, os, sys
 import bpy
 from mathutils import Vector
 
-blend, outdir = sys.argv[1], sys.argv[2]
-args = [a for a in sys.argv[3:] if not a.startswith('--')]
+ARGV = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else sys.argv[1:]   # works as bpy module or `blender -b -P`
+blend, outdir = ARGV[0], ARGV[1]
+args = [a for a in ARGV[2:] if not a.startswith('--')]
 bpy.ops.wm.open_mainfile(filepath=os.path.abspath(blend))
 sc = bpy.context.scene
 os.makedirs(outdir, exist_ok=True)
@@ -70,10 +71,10 @@ for f in range(1, N + 1):
 
 sc.render.use_motion_blur = True
 sc.render.motion_blur_shutter = 0.5
-if '--preview' in sys.argv:
+if '--preview' in ARGV:
     sc.render.resolution_x, sc.render.resolution_y = 360, 640
     sc.cycles.samples = 12
-elif '--still' in sys.argv:
+elif '--still' in ARGV:
     sc.render.resolution_x, sc.render.resolution_y = 1080, 1920
     sc.cycles.samples = 96
 else:
@@ -88,7 +89,34 @@ sc.cycles.use_adaptive_sampling = True
 sc.cycles.adaptive_threshold = 0.03
 sc.render.image_settings.file_format = 'PNG'
 
-pick = [a for a in sys.argv if a.startswith('--frames=')]
+
+def use_gpu():
+    """Render on the GPU when there is one (OptiX/CUDA on NVIDIA, HIP on AMD, Metal on Apple)."""
+    try:
+        prefs = bpy.context.preferences.addons['cycles'].preferences
+    except KeyError:
+        return None
+    for kind in ('OPTIX', 'CUDA', 'HIP', 'METAL', 'ONEAPI'):
+        try:
+            prefs.compute_device_type = kind
+            prefs.get_devices()
+        except TypeError:
+            continue
+        devs = [d for d in prefs.devices if d.type == kind]
+        if devs:
+            for d in prefs.devices:
+                d.use = d.type == kind
+            sc.cycles.device = 'GPU'
+            return kind
+    return None
+
+
+print('render device:', use_gpu() or 'CPU', flush=True)
+if sc.cycles.device == 'GPU' and '--preview' not in ARGV:
+    sc.render.resolution_x, sc.render.resolution_y = 1080, 1920   # a GPU can afford full HD
+    sc.cycles.samples = 64
+
+pick = [a for a in ARGV if a.startswith('--frames=')]
 if pick:
     frames = [int(x) for x in pick[0].split('=')[1].split(',')]
 else:
